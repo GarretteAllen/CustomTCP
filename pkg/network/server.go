@@ -29,6 +29,9 @@ func (s *Server) Start() error {
 
 	fmt.Println("Server started on", listener.Addr())
 
+	// start game loop in goroutine
+	go game.StartGameLoop()
+
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -69,6 +72,23 @@ func (s *Server) handleClient(conn net.Conn) {
 		return
 	}
 
+	positionMessage := fmt.Sprintf("POSITION %.2f %.2f\n", player.X, player.Y)
+	_, err = conn.Write([]byte(positionMessage))
+	if err != nil {
+		fmt.Println("Error sending position to client:", err)
+		conn.Close()
+		return
+	}
+	fmt.Println(positionMessage)
+
 	// Listen for further messages from the player
 	player.ListenForMessages()
+
+	// cleanup after disconnect
+	defer func() {
+		fmt.Println("Player", username, "is disconnecting.")
+		delete(game.Players, username)
+	}()
+
+	defer conn.Close()
 }

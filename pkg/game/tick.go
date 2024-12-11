@@ -1,10 +1,13 @@
 package game
 
 import (
+	"customtcp/pkg/database"
+	"customtcp/pkg/models"
+	"fmt"
 	"time"
 )
 
-const tickRate = 30 * time.Millisecond
+const tickRate = 600 * time.Millisecond
 
 func StartGameLoop() {
 	ticker := time.NewTicker(tickRate)
@@ -20,4 +23,27 @@ func StartGameLoop() {
 
 func HandleGameTick() {
 	// process player movements on tick
+	SavePlayerPositions()
+}
+
+func SavePlayerPositions() {
+	for _, player := range Players {
+		if player.NeedsSaving {
+			playerData := models.Player{
+				Username:  player.Username,
+				X:         player.X,
+				Y:         player.Y,
+				Attack:    player.Attack,
+				Ranged:    player.Ranged,
+				Hitpoints: player.Hitpoints,
+				Inventory: player.Inventory,
+			}
+			err := database.SavePlayerData(playerData)
+			if err != nil {
+				fmt.Printf("Failed to save data for player %s: %v\n", player.Username, err)
+			} else {
+				player.NeedsSaving = false
+			}
+		}
+	}
 }
