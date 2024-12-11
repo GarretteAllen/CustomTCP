@@ -8,7 +8,6 @@ type Item struct {
 }
 
 type Player struct {
-	ID          string    `bson:"_id"`
 	Username    string    `bson:"username"`
 	X           float64   `bson:"x"`
 	Y           float64   `bson:"y"`

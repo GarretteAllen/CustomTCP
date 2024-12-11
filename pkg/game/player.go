@@ -1,6 +1,7 @@
 package game
 
 import (
+	"bufio"
 	"customtcp/pkg/database"
 	"customtcp/pkg/models"
 	"fmt"
@@ -31,6 +32,13 @@ func NewPlayer(conn net.Conn, username string) *Player {
 			Hitpoints: 10,
 			Inventory: []models.Item{},
 		}
+
+		err := database.SavePlayerData(playerData)
+		if err != nil {
+			fmt.Println("Error saving new player data:", err)
+		} else {
+			fmt.Println("New player data saved to database")
+		}
 	}
 	return &Player{
 		conn:      conn,
@@ -45,17 +53,20 @@ func NewPlayer(conn net.Conn, username string) *Player {
 }
 
 func (p *Player) ListenForMessages() {
+	reader := bufio.NewReader(p.conn)
 	for {
-		var message string
-		_, err := fmt.Fscan(p.conn, &message)
+		message, err := reader.ReadString('\n')
 		if err != nil {
 			fmt.Println("Error reading from player:", err)
 			return
 		}
+		message = message[:len(message)-1]
+
 		var targetX, targetY float64
 		n, err := fmt.Sscanf(message, "MOVE_TO %f %f", &targetX, &targetY)
 		if err == nil && n == 2 {
 			p.MoveToTarget(targetX, targetY)
+			print(targetX, targetY)
 		} else {
 			fmt.Println("Unknown or invalid movement command:", message)
 		}
@@ -66,7 +77,7 @@ func (p *Player) MoveToTarget(targetX, targetY float64) {
 	deltaX := targetX - p.x
 	deltaY := targetY - p.y
 
-	stepSize := 0.1
+	stepSize := 0.5
 	distance := math.Sqrt(deltaX*deltaX + deltaY*deltaY)
 
 	if distance <= stepSize {
@@ -77,5 +88,5 @@ func (p *Player) MoveToTarget(targetX, targetY float64) {
 		p.x += deltaX * moveRatio
 		p.y += deltaY * moveRatio
 	}
-	fmt.Printf("%s moved to position (%.2f, %.2f)\n", p.username, p.x, p.y)
+	fmt.Printf("Player '%s' moved to new position: (%.2f, %.2f)\n", p.username, p.x, p.y)
 }

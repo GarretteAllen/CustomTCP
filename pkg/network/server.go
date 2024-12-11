@@ -1,6 +1,7 @@
 package network
 
 import (
+	"bufio"
 	"customtcp/pkg/game"
 	"customtcp/pkg/utils"
 	"fmt"
@@ -22,7 +23,7 @@ func NewServer(config *utils.Config) *Server {
 func (s *Server) Start() error {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", s.address, s.port))
 	if err != nil {
-		return fmt.Errorf("Could not start the server: %v", err)
+		return fmt.Errorf("could not start the server: %v", err)
 	}
 	defer listener.Close()
 
@@ -40,14 +41,27 @@ func (s *Server) Start() error {
 
 func (s *Server) handleClient(conn net.Conn) {
 	fmt.Println("New connection from:", conn.RemoteAddr().String())
-	var username string
-	_, err := fmt.Fscan(conn, &username)
+
+	reader := bufio.NewReader(conn)
+	fmt.Println("Waiting for username")
+	username, err := reader.ReadString('\n') // Read until newline character
 	if err != nil {
 		fmt.Println("Error reading username:", err)
 		conn.Close()
 		return
 	}
+	fmt.Println("Received username:", username)
 
+	// Remove the newline character from the username
+	username = username[:len(username)-1]
+
+	if username == "" {
+		fmt.Println("Invalid username received")
+		conn.Close()
+		return
+	}
+
+	// Create player after receiving username
 	player := game.NewPlayer(conn, username)
 	if player == nil {
 		fmt.Println("Failed to create player for username:", username)
@@ -55,5 +69,6 @@ func (s *Server) handleClient(conn net.Conn) {
 		return
 	}
 
+	// Listen for further messages from the player
 	player.ListenForMessages()
 }
