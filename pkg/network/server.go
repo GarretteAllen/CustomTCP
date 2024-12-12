@@ -1,7 +1,6 @@
 package network
 
 import (
-	"bufio"
 	"customtcp/pkg/game"
 	"customtcp/pkg/utils"
 	"fmt"
@@ -34,61 +33,11 @@ func (s *Server) Start() error {
 
 	for {
 		conn, err := listener.Accept()
+		fmt.Println("Waiting for connections")
 		if err != nil {
-			fmt.Println("Error accepting connection", err)
+			utils.LogError("Error accepting connection", err)
 			continue
 		}
-		go s.handleClient(conn)
+		go s.HandleClient(conn)
 	}
-}
-
-func (s *Server) handleClient(conn net.Conn) {
-	fmt.Println("New connection from:", conn.RemoteAddr().String())
-
-	reader := bufio.NewReader(conn)
-	fmt.Println("Waiting for username")
-	username, err := reader.ReadString('\n') // Read until newline character
-	if err != nil {
-		fmt.Println("Error reading username:", err)
-		conn.Close()
-		return
-	}
-	fmt.Println("Received username:", username)
-
-	// Remove the newline character from the username
-	username = username[:len(username)-1]
-
-	if username == "" {
-		fmt.Println("Invalid username received")
-		conn.Close()
-		return
-	}
-
-	// Create player after receiving username
-	player := game.NewPlayer(conn, username)
-	if player == nil {
-		fmt.Println("Failed to create player for username:", username)
-		conn.Close()
-		return
-	}
-
-	positionMessage := fmt.Sprintf("POSITION %.2f %.2f\n", player.X, player.Y)
-	_, err = conn.Write([]byte(positionMessage))
-	if err != nil {
-		fmt.Println("Error sending position to client:", err)
-		conn.Close()
-		return
-	}
-	fmt.Println(positionMessage)
-
-	// Listen for further messages from the player
-	player.ListenForMessages()
-
-	// cleanup after disconnect
-	defer func() {
-		fmt.Println("Player", username, "is disconnecting.")
-		delete(game.Players, username)
-	}()
-
-	defer conn.Close()
 }

@@ -27,7 +27,10 @@ func HandleGameTick() {
 }
 
 func SavePlayerPositions() {
-	for _, player := range Players {
+	Players.RLock()
+	defer Players.RUnlock()
+
+	for _, player := range Players.data {
 		if player.NeedsSaving {
 			playerData := models.Player{
 				Username:  player.Username,
