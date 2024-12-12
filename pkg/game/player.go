@@ -3,10 +3,13 @@ package game
 import (
 	"bufio"
 	"customtcp/pkg/database"
+	"customtcp/pkg/messages"
 	"customtcp/pkg/models"
+	"customtcp/pkg/utils"
 	"fmt"
 	"math"
 	"net"
+	"sync"
 )
 
 type Player struct {
@@ -21,7 +24,13 @@ type Player struct {
 }
 
 // map to store players by username
-var Players = make(map[string]*Player)
+// thread safe! (?)
+var Players = struct {
+	sync.RWMutex
+	data map[string]*Player
+}{
+	data: make(map[string]*Player),
+}
 
 func NewPlayer(conn net.Conn, username string) *Player {
 	playerData, err := database.GetPlayerData(username)
@@ -54,9 +63,17 @@ func NewPlayer(conn net.Conn, username string) *Player {
 		Hitpoints: playerData.Hitpoints,
 		Inventory: playerData.Inventory,
 	}
-	Players[player.Username] = player
+	Players.Lock()
+	defer Players.Unlock()
+	Players.data[player.Username] = player
 
 	return player
+}
+
+func RemovePlayer(username string) {
+	Players.Lock()
+	defer Players.Unlock()
+	delete(Players.data, username)
 }
 
 func (p *Player) ListenForMessages() {
@@ -69,13 +86,26 @@ func (p *Player) ListenForMessages() {
 		}
 		message = message[:len(message)-1]
 
-		var targetX, targetY float64
-		n, err := fmt.Sscanf(message, "MOVE_TO %f %f", &targetX, &targetY)
-		if err == nil && n == 2 {
-			p.MoveToTarget(targetX, targetY)
-			print(targetX, targetY)
-		} else {
-			fmt.Println("Unknown or invalid movement command:", message)
+		var msg messages.Message
+		_, err = fmt.Sscanf(message, "%s %[^\n]", &msg.Type, &msg.Payload)
+		if err != nil {
+			utils.LogError("Error parsing message:", err)
+			continue
+		}
+
+		switch msg.Type {
+		case messages.MovementMessage:
+			var targetX, targetY float64
+			n, err := fmt.Sscanf(msg.Payload, "%f %f", &targetX, &targetY)
+			if err == nil && n == 2 {
+				p.MoveToTarget(targetX, targetY)
+			} else {
+				fmt.Println("Invalid movement command:", msg.Payload)
+			}
+		case messages.CombatMessage:
+			utils.LogInfo("Combat message received: %s", msg.Payload)
+		default:
+			fmt.Println("Unknown message type:", msg.Type)
 		}
 	}
 }

@@ -2,7 +2,10 @@ module customtcp
 
 go 1.23.4
 
-require go.mongodb.org/mongo-driver v1.17.1
+require (
+	github.com/spf13/viper v1.19.0
+	go.mongodb.org/mongo-driver v1.17.1
+)
 
 require (
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
@@ -19,7 +22,6 @@ require (
 	github.com/spf13/afero v1.11.0 // indirect
 	github.com/spf13/cast v1.6.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	github.com/spf13/viper v1.19.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/xdg-go/scram v1.1.2 // indirect
