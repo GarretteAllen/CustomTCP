@@ -9,8 +9,20 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"strings"
 	"sync"
 )
+
+// Define a Players type
+type Players struct {
+	sync.RWMutex
+	data map[string]*Player
+}
+
+// Initialize the Players instance
+var PlayersInstance = &Players{
+	data: make(map[string]*Player),
+}
 
 type Player struct {
 	Conn        net.Conn
@@ -23,13 +35,10 @@ type Player struct {
 	NeedsSaving bool
 }
 
-// map to store players by username
-// thread safe! (?)
-var Players = struct {
-	sync.RWMutex
-	data map[string]*Player
-}{
-	data: make(map[string]*Player),
+func (p *Players) GetAllPlayers() map[string]*Player {
+	p.RLock()
+	defer p.RUnlock()
+	return p.data
 }
 
 func NewPlayer(conn net.Conn, username string) *Player {
@@ -63,17 +72,19 @@ func NewPlayer(conn net.Conn, username string) *Player {
 		Hitpoints: playerData.Hitpoints,
 		Inventory: playerData.Inventory,
 	}
-	Players.Lock()
-	defer Players.Unlock()
-	Players.data[player.Username] = player
 
+	PlayersInstance.Lock()
+	defer PlayersInstance.Unlock()
+	PlayersInstance.data[player.Username] = player
+	fmt.Println("Current players", PlayersInstance.data)
 	return player
 }
 
 func RemovePlayer(username string) {
-	Players.Lock()
-	defer Players.Unlock()
-	delete(Players.data, username)
+	PlayersInstance.Lock()
+	defer PlayersInstance.Unlock()
+	delete(PlayersInstance.data, username)
+	fmt.Printf("Player '%s' removed. Current players: %+v\n", username, PlayersInstance.data)
 }
 
 func (p *Player) ListenForMessages() {
@@ -87,20 +98,32 @@ func (p *Player) ListenForMessages() {
 		message = message[:len(message)-1]
 
 		var msg messages.Message
-		_, err = fmt.Sscanf(message, "%s %[^\n]", &msg.Type, &msg.Payload)
-		if err != nil {
+		fmt.Println("received message: ", message)
+		parts := strings.Fields(message)
+		if len(parts) < 2 {
 			utils.LogError("Error parsing message:", err)
 			continue
 		}
 
+		msg.Type = parts[0]
+		msg.Payload = message[len(msg.Type)+1:]
+
 		switch msg.Type {
 		case messages.MovementMessage:
+			var playerID string
 			var targetX, targetY float64
-			n, err := fmt.Sscanf(msg.Payload, "%f %f", &targetX, &targetY)
-			if err == nil && n == 2 {
-				p.MoveToTarget(targetX, targetY)
-			} else {
-				fmt.Println("Invalid movement command:", msg.Payload)
+			n, err := fmt.Sscanf(msg.Payload, "%s %f %f", &playerID, &targetX, &targetY)
+			if err == nil && n == 3 {
+				PlayersInstance.RLock()
+				player, exists := PlayersInstance.data[playerID]
+				PlayersInstance.RUnlock()
+
+				if exists {
+					player.MoveToTarget(targetX, targetY)
+					fmt.Println("moving player to", targetX, targetY)
+				} else {
+					fmt.Println("Invalid movement command")
+				}
 			}
 		case messages.CombatMessage:
 			utils.LogInfo("Combat message received: %s", msg.Payload)
@@ -127,6 +150,22 @@ func (p *Player) MoveToTarget(targetX, targetY float64) {
 	}
 	p.UpdatePosition(targetX, targetY)
 	fmt.Printf("Player '%s' moved to new position: (%.2f, %.2f)\n", p.Username, p.X, p.Y)
+
+	PlayersInstance.RLock()
+	defer PlayersInstance.RUnlock()
+	for _, player := range PlayersInstance.data {
+		if player.Username != p.Username {
+			posMessage := messages.Message{
+				Type:    messages.PositionMessage,
+				Payload: fmt.Sprintf("%s %.2f %.2f", p.Username, p.X, p.Y),
+			}
+			_, err := player.Conn.Write([]byte(fmt.Sprintf("%s %s\n", posMessage.Type, posMessage.Payload)))
+			if err != nil {
+				utils.LogError("Error sending position data to client", err)
+			}
+		}
+	}
+	fmt.Printf("Player '%s' moved to new position: (%.2f, %.2f)\n", p.Username, p.X, p.Y)
 }
 
 func (p *Player) UpdatePosition(newX, newY float64) {
@@ -134,5 +173,24 @@ func (p *Player) UpdatePosition(newX, newY float64) {
 		p.X = newX
 		p.Y = newY
 		p.NeedsSaving = true
+	}
+}
+
+func (p *Player) SendInitialPositions() {
+	PlayersInstance.RLock()
+	defer PlayersInstance.RUnlock()
+
+	for username, otherPlayer := range PlayersInstance.data {
+		if username != p.Username {
+			posMessage := messages.Message{
+				Type:    messages.PositionMessage,
+				Payload: fmt.Sprintf("%s %.2f %.2f", otherPlayer.Username, otherPlayer.X, otherPlayer.Y),
+			}
+			fmt.Printf("Sending initial position of %s to %s: %s\n", username, p.Username, posMessage.Payload)
+			_, err := p.Conn.Write([]byte(fmt.Sprintf("%s %s\n", posMessage.Type, posMessage.Payload)))
+			if err != nil {
+				fmt.Printf("error sending initial position to %s: %v\n", p.Username, err)
+			}
+		}
 	}
 }

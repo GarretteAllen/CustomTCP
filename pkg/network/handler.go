@@ -14,7 +14,7 @@ func (s *Server) HandleClient(conn net.Conn) {
 
 	reader := bufio.NewReader(conn)
 	utils.LogInfo("Waiting for username")
-	username, err := reader.ReadString('\n') // Read until newline character
+	username, err := reader.ReadString('\n')
 	if err != nil {
 		utils.LogError("Error reading username:", err)
 		conn.Close()
@@ -49,30 +49,43 @@ func (s *Server) HandleClient(conn net.Conn) {
 		Type:    messages.WelcomeMessage,
 		Payload: fmt.Sprintf("Welcome, %s\n", username),
 	}
+	fmt.Println("sending to client: ", welcomeMsg.Payload)
 	conn.Write([]byte(fmt.Sprintf("%s %s\n", welcomeMsg.Type, welcomeMsg.Payload)))
+
+	player.SendInitialPositions()
 
 	// initial player position
 	posMessage := messages.Message{
 		Type:    messages.PositionMessage,
-		Payload: fmt.Sprintf("%.2f, %.2f", player.X, player.Y),
+		Payload: fmt.Sprintf("%s %.2f, %.2f", username, player.X, player.Y),
 	}
-	msg := fmt.Sprintf("%s %s\n", posMessage.Type, posMessage.Payload)
-	_, err = conn.Write([]byte(msg))
-	if err != nil {
-		utils.LogError("Error sending position to client", err)
-		conn.Close()
-		return
-	}
-	fmt.Println(msg)
-
-	// listen for further messages from the player
-	player.ListenForMessages()
+	s.BroadcastMessageToAll(fmt.Sprintf("%s %s\n", posMessage.Type, posMessage.Payload))
 
 	// cleanup after disconnect
 	defer func() {
 		utils.LogInfo("Player '%s' is disconnecting.", username)
 		game.RemovePlayer(username)
+
+		disconnectMsg := messages.Message{
+			Type:    messages.DisconnectMessage,
+			Payload: username,
+		}
+		s.BroadcastMessageToAll(fmt.Sprintf("%s %s\n", disconnectMsg.Type, disconnectMsg.Payload))
+
+		conn.Close()
 	}()
 
-	defer conn.Close()
+	player.ListenForMessages()
+}
+
+func (s *Server) BroadcastMessageToAll(msg string) {
+	players := game.PlayersInstance.GetAllPlayers()
+	for _, player := range players {
+		if player.Conn != nil {
+			_, err := player.Conn.Write([]byte(msg))
+			if err != nil {
+				utils.LogError("Error sending message to player", err)
+			}
+		}
+	}
 }
